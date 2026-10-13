@@ -1,0 +1,10 @@
+{
+  "dataset": "adult",
+  "random_seed": 42,
+  "splits": {
+    "train": 22792,
+    "calibration": 3256,
+    "conformal": 3256,
+    "policy": 3257
+  }
+}

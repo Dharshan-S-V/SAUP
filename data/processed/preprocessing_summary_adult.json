@@ -1,0 +1,83 @@
+{
+  "train_rows": 32561,
+  "test_rows": 16281,
+  "train_columns": [
+    "age",
+    "workclass",
+    "fnlwgt",
+    "education",
+    "education_num",
+    "marital_status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "capital_gain",
+    "capital_loss",
+    "hours_per_week",
+    "native_country",
+    "income"
+  ],
+  "train_missing": {
+    "age": 0,
+    "workclass": 1836,
+    "fnlwgt": 0,
+    "education": 0,
+    "education_num": 0,
+    "marital_status": 0,
+    "occupation": 1843,
+    "relationship": 0,
+    "race": 0,
+    "sex": 0,
+    "capital_gain": 0,
+    "capital_loss": 0,
+    "hours_per_week": 0,
+    "native_country": 583,
+    "income": 0
+  },
+  "test_missing": {
+    "age": 0,
+    "workclass": 963,
+    "fnlwgt": 0,
+    "education": 0,
+    "education_num": 0,
+    "marital_status": 0,
+    "occupation": 966,
+    "relationship": 0,
+    "race": 0,
+    "sex": 0,
+    "capital_gain": 0,
+    "capital_loss": 0,
+    "hours_per_week": 0,
+    "native_country": 274,
+    "income": 0
+  },
+  "train_duplicates": 24,
+  "test_duplicates": 5,
+  "train_label_dist": {
+    "0": 24720,
+    "1": 7841
+  },
+  "test_label_dist": {
+    "0": 12435,
+    "1": 3846
+  },
+  "numerical_features": [
+    "age",
+    "fnlwgt",
+    "education_num",
+    "capital_gain",
+    "capital_loss",
+    "hours_per_week"
+  ],
+  "categorical_features": [
+    "workclass",
+    "education",
+    "marital_status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "native_country"
+  ]
+}

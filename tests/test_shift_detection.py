@@ -69,8 +69,66 @@ class TestShiftDetector:
         target["age"] = 30
         report = detector.detect(target)
         assert "ks_results" in report
+        assert np.isfinite(report["mmd"]["value"])
 
     def test_unfitted_raises(self):
         detector = ShiftDetector()
         with pytest.raises(RuntimeError):
             detector.detect(_make_source_df(100))
+
+    def test_feature_scale_disparity_detected(self):
+        """MMD detects shift on small-scale feature even when large-scale feature is present."""
+        rng = np.random.RandomState(42)
+        n = 300
+        # Feature 1 has scale 100,000; Feature 2 has scale 10
+        source_df = pd.DataFrame({
+            "large_feature": rng.normal(200000, 50000, n),
+            "small_feature": rng.normal(30, 5, n),
+        })
+        
+        detector = ShiftDetector(numerical_features=["large_feature", "small_feature"], categorical_features=[])
+        detector.fit(source_df)
+        
+        # Target: large_feature is UNCHANGED, small_feature has severe shift (+25)
+        target_df = pd.DataFrame({
+            "large_feature": rng.normal(200000, 50000, n),
+            "small_feature": rng.normal(55, 5, n),
+        })
+        
+        report = detector.detect(target_df)
+        assert np.isfinite(report["mmd"]["value"])
+        assert report["mmd"]["value"] > report["mmd"]["threshold"]
+        assert report["mmd"]["detected"]
+
+    def test_duplicate_records_handled(self):
+        """Detector handles duplicated records without zero-division or crash."""
+        df = pd.DataFrame({
+            "col1": [1.0, 1.0, 1.0, 2.0, 2.0] * 20,
+            "col2": [5.0, 5.0, 5.0, 5.0, 5.0] * 20,
+        })
+        detector = ShiftDetector(numerical_features=["col1", "col2"], categorical_features=[])
+        detector.fit(df)
+        report = detector.detect(df)
+        assert np.isfinite(report["mmd"]["value"])
+        assert np.isfinite(report["mmd"]["threshold"])
+
+    def test_small_sample_size(self):
+        """Detector operates reliably with small sample sizes."""
+        source_df = pd.DataFrame({"col1": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        target_df = pd.DataFrame({"col1": [10.0, 20.0, 30.0]})
+        detector = ShiftDetector(numerical_features=["col1"], categorical_features=[])
+        detector.fit(source_df)
+        report = detector.detect(target_df)
+        assert np.isfinite(report["mmd"]["value"])
+
+    def test_deterministic_and_reproducible(self):
+        """Repeated detections on identical data produce identical unrounded MMD."""
+        source_df = _make_source_df(200, seed=1)
+        target_df = _make_source_df(200, seed=2)
+        detector = ShiftDetector()
+        detector.fit(source_df)
+        
+        report1 = detector.detect(target_df)
+        report2 = detector.detect(target_df)
+        assert report1["mmd"]["value"] == report2["mmd"]["value"]
+        assert report1["mmd"]["threshold"] == report2["mmd"]["threshold"]

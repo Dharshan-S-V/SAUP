@@ -96,6 +96,9 @@ def generate_covariate_shift(
     source_label_dist = df[target].value_counts(normalize=True).to_dict()
     target_label_dist = shifted_df[target].value_counts(normalize=True).to_dict()
     
+    n_dups = int(shifted_df.duplicated().sum())
+    unique_frac = float(len(shifted_df.drop_duplicates()) / len(shifted_df)) if len(shifted_df) > 0 else 0.0
+    
     meta = {
         "scenario": "covariate_shift",
         "severity": severity,
@@ -103,6 +106,9 @@ def generate_covariate_shift(
         "seed": seed,
         "source_size": len(df),
         "target_size": len(shifted_df),
+        "n_duplicates": n_dups,
+        "unique_row_fraction": unique_frac,
+        "sampling_with_replacement": True,
         "source_label_dist": source_label_dist,
         "target_label_dist": target_label_dist,
         "covariate_cols": cols,
@@ -163,6 +169,9 @@ def generate_label_shift(
     shifted_df = pd.concat([sampled_0, sampled_1], ignore_index=True)
     shifted_df = shifted_df.iloc[rng.permutation(len(shifted_df))].reset_index(drop=True)
     
+    n_dups = int(shifted_df.duplicated().sum())
+    unique_frac = float(len(shifted_df.drop_duplicates()) / len(shifted_df)) if len(shifted_df) > 0 else 0.0
+    
     meta = {
         "scenario": "label_shift",
         "severity": severity,
@@ -170,6 +179,9 @@ def generate_label_shift(
         "seed": seed,
         "source_size": len(df),
         "target_size": len(shifted_df),
+        "n_duplicates": n_dups,
+        "unique_row_fraction": unique_frac,
+        "sampling_with_replacement": True,
         "source_p1": source_p1,
         "target_p1": float(shifted_df[target].mean()),
         "note": "True labels used for population construction only; not given to detector/adapter",
@@ -220,6 +232,9 @@ def generate_mixed_shift(
         target_col=target, covariate_cols=covariate_cols,
     )
     
+    n_dups = int(shifted_df.duplicated().sum())
+    unique_frac = float(len(shifted_df.drop_duplicates()) / len(shifted_df)) if len(shifted_df) > 0 else 0.0
+    
     meta = {
         "scenario": "mixed_shift",
         "severity": severity,
@@ -227,6 +242,9 @@ def generate_mixed_shift(
         "seed": seed,
         "source_size": len(df),
         "target_size": len(shifted_df),
+        "n_duplicates": n_dups,
+        "unique_row_fraction": unique_frac,
+        "sampling_with_replacement": True,
         "source_label_dist": df[target].value_counts(normalize=True).to_dict(),
         "target_label_dist": shifted_df[target].value_counts(normalize=True).to_dict(),
         "note": "Stress test: neither covariate-shift nor label-shift assumptions hold perfectly",
@@ -313,6 +331,9 @@ def generate_severe_shift(
             
             shifted_df[col] = perturbed
     
+    n_dups_sev = int(shifted_df.duplicated().sum())
+    unique_frac_sev = float(len(shifted_df.drop_duplicates()) / len(shifted_df)) if len(shifted_df) > 0 else 0.0
+    
     meta = {
         "scenario": "severe_shift",
         "severity": severity,
@@ -320,6 +341,9 @@ def generate_severe_shift(
         "seed": seed,
         "source_size": len(df),
         "target_size": len(shifted_df),
+        "n_duplicates": n_dups_sev,
+        "unique_row_fraction": unique_frac_sev,
+        "sampling_with_replacement": True,
         "source_label_dist": df[target].value_counts(normalize=True).to_dict(),
         "target_label_dist": shifted_df[target].value_counts(normalize=True).to_dict(),
         "note": "SYNTHETIC stress test with tail sampling and numerical perturbation. "

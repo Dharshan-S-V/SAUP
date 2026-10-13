@@ -153,7 +153,7 @@ def generate_dataset_report(
             "|----------|----------|----------|-------------|----------|--------------|---------------|----------|",
         ])
         for _, row in df_saup.iterrows():
-            sel_acc = row.get("selective_accuracy", np.nan)
+            sel_acc = row.get("selective_accuracy", row.get("accepted_prediction_accuracy", np.nan))
             sel_acc_str = f"{sel_acc:.4f}" if pd.notna(sel_acc) else "N/A"
             report_lines.append(
                 f"| {row.get('scenario','')} | {row.get('severity','')} | "
@@ -197,7 +197,12 @@ def generate_experimental_report(
     reports_dir: str = "reports",
 ) -> Path:
     """Generate the Adult experimental report (preserves legacy interface)."""
-    return generate_dataset_report("adult", results_dir=results_dir, reports_dir=reports_dir)
+    rep_path = generate_dataset_report("adult", results_dir=results_dir, reports_dir=reports_dir)
+    out_path = resolve_path(reports_dir)
+    content = rep_path.read_text(encoding="utf-8")
+    (out_path / "experimental_report.md").write_text(content, encoding="utf-8")
+    (out_path / "adult_experimental_report.md").write_text(content, encoding="utf-8")
+    return rep_path
 
 
 def generate_unified_results_table(
@@ -434,5 +439,42 @@ def generate_limitations_doc(reports_dir: str = "reports") -> Path:
 3. BBSE assumes that conditional distribution P(X|Y) remains invariant under shift.
 """
     doc_path = out_path / "limitations.md"
+    doc_path.write_text(content, encoding="utf-8")
+    return doc_path
+
+
+def generate_references_doc(reports_dir: str = "reports") -> Path:
+    """Generate references documentation."""
+    out_path = resolve_path(reports_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    # If root reports/references.md exists, replicate it; otherwise write canonical references
+    src_refs = resolve_path("reports/references.md")
+    if src_refs.exists() and src_refs.resolve() != (out_path / "references.md").resolve():
+        content = src_refs.read_text(encoding="utf-8")
+    else:
+        content = """# SAUP References
+
+## Primary Literature
+
+1. **Ai, R. and Ren, Z.** (2024). Not All Distributional Shifts Are Equal: Fine-Grained Robust Conformal Inference. *ICML 2024*, PMLR 235.
+2. **Liu, Y., Xu, Z., and Kolar, M.** (2024). Multi-Source Conformal Inference Under Distribution Shift. *ICML 2024*, PMLR 235.
+3. **Jonkers, L., Vercruyssen, V., and Davis, J.** (2024). Conformal Predictive Systems Under Covariate Shift. *COPA 2024*, PMLR 230.
+4. **Amoukou, S.I., Bénard, C., and Sabourin, A.** (2024). Sequential Harmful Shift Detection Without Labels. *NeurIPS 2024*.
+5. **Popordanoska, T., Kasa, M., and Feuerriegel, S.** (2024). LaSCal: Label-Shift Calibration without Target Labels. *NeurIPS 2024*.
+6. **Kasa, M., Popordanoska, T., and Feuerriegel, S.** (2025). Adapting Prediction Sets to Distribution Shifts Without Labels. *AISTATS 2025*, PMLR 286.
+7. **Baby, D., Wang, Y., and Yu, Y.** (2025). Adapting to Online Distribution Shifts in Deep Learning: A Black-Box Approach. *AISTATS 2025*, PMLR 258.
+8. **Lee, J.** (2026). Diagnosing Conformal Prediction Failures Under Distribution Shift: A COVID-19 Case Study. *PMLR 337*.
+9. **Jiang, Y.** (2026). Score-Based Diffusion Priors for Adaptive Conformal Inference under Distribution Shift. *PMLR 337*.
+10. **Laghuvarapu, S., Deb, N., and Sun, Y.** (2026). KMM-CP: Practical Conformal Prediction under Covariate Shift via Selective Kernel Mean Matching. *PMLR 337*.
+
+## Foundational Methods
+
+11. **Vovk, V., Gammerman, A., and Shafer, G.** (2005). *Algorithmic Learning in a Random World*. Springer.
+12. **Guo, C., Pleiss, G., Sun, Y., and Weinberger, K.Q.** (2017). On Calibration of Modern Neural Networks. *ICML 2017*.
+13. **Lipton, Z.C., Wang, Y.-X., and Smola, A.** (2018). Detecting and Correcting for Label Shift with Black Box Predictors. *ICML 2018*.
+14. **Tibshirani, R.J., Barber, R.F., Candès, E.J., and Ramdas, A.** (2019). Conformal Prediction Under Covariate Shift. *NeurIPS 2019*.
+"""
+    doc_path = out_path / "references.md"
     doc_path.write_text(content, encoding="utf-8")
     return doc_path

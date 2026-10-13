@@ -49,6 +49,9 @@ class ShiftDetector:
         self.numerical_cols: List[str] = []
         self.categorical_cols: List[str] = []
         self.source_numerical: Optional[np.ndarray] = None
+        self.source_numerical_scaled: Optional[np.ndarray] = None
+        self.scaler_mean_: Optional[np.ndarray] = None
+        self.scaler_scale_: Optional[np.ndarray] = None
         self.source_categorical: Dict[str, np.ndarray] = {}
         self.mmd_baseline: float = 0.0
         self.mmd_threshold: float = 0.0
@@ -63,7 +66,8 @@ class ShiftDetector:
     ) -> "ShiftDetector":
         """Store source distribution reference and calibrate MMD threshold.
         
-        Uses source-vs-source bootstrap to estimate a baseline MMD.
+        Learns source-only standardization parameters and estimates baseline MMD
+        distribution from independent source-vs-source splits. Does NOT use target labels.
         
         Args:
             X_source: Source feature DataFrame (without target).
@@ -79,7 +83,6 @@ class ShiftDetector:
         if num_candidates is not None:
             self.numerical_cols = [c for c in num_candidates if c in X_source.columns]
         else:
-            # Check if Adult default features match
             adult_match = [c for c in NUMERICAL_FEATURES if c in X_source.columns]
             if len(adult_match) > 0 and set(adult_match).issubset(set(X_source.columns)):
                 self.numerical_cols = adult_match
@@ -97,41 +100,57 @@ class ShiftDetector:
             else:
                 self.categorical_cols = list(X_source.select_dtypes(include=["object", "category"]).columns)
         
-        # Store numerical reference array
+        # Fit source-only standardization parameters to prevent large-scale features from dominating MMD
         if len(self.numerical_cols) > 0:
-            self.source_numerical = X_source[self.numerical_cols].values.astype(float)
+            raw_vals = X_source[self.numerical_cols].values.astype(float)
+            self.source_numerical = raw_vals
+            
+            self.scaler_mean_ = np.nanmean(raw_vals, axis=0)
+            self.scaler_scale_ = np.nanstd(raw_vals, axis=0)
+            # Guard against zero or near-zero variance features
+            self.scaler_scale_[self.scaler_scale_ < 1e-8] = 1.0
+            
+            scaled_source = (raw_vals - self.scaler_mean_) / self.scaler_scale_
+            self.source_numerical_scaled = np.nan_to_num(scaled_source, nan=0.0)
         else:
             self.source_numerical = np.zeros((len(X_source), 0))
+            self.source_numerical_scaled = np.zeros((len(X_source), 0))
+            self.scaler_mean_ = np.array([])
+            self.scaler_scale_ = np.array([])
         
         # Store categorical reference arrays
         self.source_categorical = {
             col: X_source[col].dropna().values for col in self.categorical_cols
         }
         
-        # MMD baseline: source vs source bootstrap
-        if self.source_numerical.shape[1] > 0:
+        # MMD baseline: source vs source bootstrap on standardized features
+        if self.source_numerical_scaled.shape[1] > 0:
             rng = np.random.RandomState(42)
             mmd_values = []
-            for _ in range(n_mmd_bootstrap):
-                n = len(self.source_numerical)
+            n = len(self.source_numerical_scaled)
+            half = n // 2
+            for b_idx in range(n_mmd_bootstrap):
                 perm = rng.permutation(n)
-                half = n // 2
                 mmd_val = maximum_mean_discrepancy(
-                    self.source_numerical[perm[:half]],
-                    self.source_numerical[perm[half:2*half]],
+                    self.source_numerical_scaled[perm[:half]],
+                    self.source_numerical_scaled[perm[half:2*half]],
                     subsample=self.mmd_subsample,
+                    seed=42 + b_idx,
                 )
                 mmd_values.append(mmd_val)
             
             self.mmd_baseline = float(np.mean(mmd_values))
-            self.mmd_threshold = float(np.mean(mmd_values) + 2 * np.std(mmd_values))
+            p95 = float(np.percentile(mmd_values, 95))
+            two_std = float(np.mean(mmd_values) + 2.0 * np.std(mmd_values))
+            self.mmd_threshold = float(max(p95, two_std, 1e-5))
         else:
             self.mmd_baseline = 0.0
             self.mmd_threshold = 0.0
         
         self.fitted = True
         logger.info(
-            "ShiftDetector fitted on %d samples (%d num, %d cat). MMD baseline=%.6f, threshold=%.6f",
+            "ShiftDetector fitted on %d samples (%d num, %d cat). "
+            "MMD baseline=%.8f, threshold=%.8f",
             len(X_source), len(self.numerical_cols), len(self.categorical_cols),
             self.mmd_baseline, self.mmd_threshold
         )
@@ -231,19 +250,21 @@ class ShiftDetector:
                     ),
                 }
         
-        # ── MMD ──
-        if len(num_cols) > 0:
+        # ── MMD on standardized numerical features ──
+        if len(num_cols) > 0 and self.source_numerical_scaled.shape[1] > 0:
             target_num = X_target[num_cols].values.astype(float)
+            target_scaled = (target_num - self.scaler_mean_) / self.scaler_scale_
+            target_scaled = np.nan_to_num(target_scaled, nan=0.0)
             mmd_val = maximum_mean_discrepancy(
-                self.source_numerical, target_num, subsample=self.mmd_subsample
+                self.source_numerical_scaled, target_scaled, subsample=self.mmd_subsample, seed=42
             )
         else:
             mmd_val = 0.0
             
-        report["mmd"]["value"] = mmd_val
-        report["mmd"]["baseline"] = self.mmd_baseline
-        report["mmd"]["threshold"] = self.mmd_threshold
-        report["mmd"]["detected"] = mmd_val > self.mmd_threshold
+        report["mmd"]["value"] = float(mmd_val)
+        report["mmd"]["baseline"] = float(self.mmd_baseline)
+        report["mmd"]["threshold"] = float(self.mmd_threshold)
+        report["mmd"]["detected"] = bool(mmd_val > self.mmd_threshold)
         
         # ── Overall assessment ──
         ks_detected = report["ks_results"].get("n_rejected", 0) > 0

@@ -287,8 +287,11 @@ def conformal_metrics(
     return {
         "nominal_coverage": nominal_coverage,
         "empirical_coverage": empirical_coverage,
+        "conformal_empirical_coverage": empirical_coverage,
         "coverage_gap": empirical_coverage - nominal_coverage,
+        "conformal_coverage_gap": empirical_coverage - nominal_coverage,
         "avg_set_size": avg_set_size,
+        "avg_prediction_set_size": avg_set_size,
         "empty_set_rate": empty_rate,
         "full_set_rate": full_rate,
         "class_0_coverage": class_coverage[0],
@@ -314,29 +317,37 @@ def selective_prediction_metrics(
         Dictionary of selective prediction metrics.
     """
     n = len(y_true)
-    n_accepted = accepted_mask.sum()
+    n_accepted = int(accepted_mask.sum())
     
     if n == 0:
         return {
-            "coverage": 0.0, "selective_risk": float("nan"),
-            "abstention_rate": 1.0, "selective_accuracy": float("nan"),
+            "accepted_coverage": 0.0,
+            "accepted_fraction": 0.0,
+            "coverage": 0.0,
+            "selective_risk": float("nan"),
+            "abstention_rate": 1.0,
+            "selective_accuracy": float("nan"),
+            "accepted_prediction_accuracy": float("nan"),
         }
     
     coverage = n_accepted / n
     abstention_rate = 1.0 - coverage
     
     if n_accepted > 0:
-        selective_accuracy = accuracy_score(y_true[accepted_mask], y_pred[accepted_mask])
-        selective_risk = 1.0 - selective_accuracy
+        selective_accuracy = float(accuracy_score(y_true[accepted_mask], y_pred[accepted_mask]))
+        selective_risk = float(1.0 - selective_accuracy)
     else:
         selective_accuracy = float("nan")
         selective_risk = float("nan")
     
     return {
+        "accepted_coverage": coverage,
+        "accepted_fraction": coverage,
         "coverage": coverage,
         "selective_risk": selective_risk,
         "abstention_rate": abstention_rate,
         "selective_accuracy": selective_accuracy,
+        "accepted_prediction_accuracy": selective_accuracy,
     }
 
 
@@ -501,70 +512,94 @@ def maximum_mean_discrepancy(
     target: np.ndarray,
     bandwidth: Optional[float] = None,
     subsample: int = 2000,
+    unbiased: bool = True,
+    seed: int = 42,
 ) -> float:
-    """Compute Maximum Mean Discrepancy with RBF kernel.
+    """Compute Maximum Mean Discrepancy (MMD^2) with RBF kernel.
     
-    Uses the unbiased estimator. If bandwidth is None, uses the median
-    heuristic on the combined sample.
+    Supports both unbiased (Gretton et al., 2012) and biased estimators.
+    Uses median heuristic on pairwise distances for RBF kernel bandwidth sigma.
     
     Args:
         source: Source feature matrix, shape (n, d).
         target: Target feature matrix, shape (m, d).
-        bandwidth: RBF kernel bandwidth (sigma). None for median heuristic.
-        subsample: Maximum number of samples from each distribution.
+        bandwidth: RBF kernel bandwidth (sigma). If None, uses median distance heuristic.
+        subsample: Maximum number of samples from each distribution (deterministic via seed).
+        unbiased: If True, uses unbiased MMD^2 estimator (can be slightly negative around 0);
+                  if False, uses biased V-statistic estimator (always non-negative).
+        seed: Random seed for reproducible subsampling.
         
     Returns:
-        MMD^2 value (unbiased estimate).
+        Computed MMD^2 value (unrounded float).
     """
-    rng = np.random.RandomState(42)
+    source_arr = np.asarray(source, dtype=float)
+    target_arr = np.asarray(target, dtype=float)
     
-    if len(source) > subsample:
-        idx = rng.choice(len(source), subsample, replace=False)
-        source = source[idx]
-    if len(target) > subsample:
-        idx = rng.choice(len(target), subsample, replace=False)
-        target = target[idx]
+    if source_arr.ndim == 1:
+        source_arr = source_arr.reshape(-1, 1)
+    if target_arr.ndim == 1:
+        target_arr = target_arr.reshape(-1, 1)
+        
+    if len(source_arr) == 0 or len(target_arr) == 0:
+        return 0.0
+        
+    rng = np.random.RandomState(seed)
+    if len(source_arr) > subsample:
+        idx_s = rng.choice(len(source_arr), subsample, replace=False)
+        source_arr = source_arr[idx_s]
+    if len(target_arr) > subsample:
+        idx_t = rng.choice(len(target_arr), subsample, replace=False)
+        target_arr = target_arr[idx_t]
+        
+    n = len(source_arr)
+    m = len(target_arr)
     
-    if source.ndim == 1:
-        source = source.reshape(-1, 1)
-    if target.ndim == 1:
-        target = target.reshape(-1, 1)
-    
-    # Median heuristic for bandwidth
+    # Bandwidth selection via median heuristic
     if bandwidth is None:
-        combined = np.vstack([source[:min(500, len(source))],
-                              target[:min(500, len(target))]])
+        n_med_s = min(500, n)
+        n_med_t = min(500, m)
+        combined = np.vstack([source_arr[:n_med_s], target_arr[:n_med_t]])
         dists = _pairwise_sq_dists(combined, combined)
-        median_dist = np.median(dists[dists > 0])
-        bandwidth = np.sqrt(median_dist / 2)
-        if bandwidth < 1e-10:
+        # Filter out self-distances and duplicate point zero distances
+        pos_dists = dists[dists > 1e-10]
+        if len(pos_dists) > 0:
+            median_sq = np.median(pos_dists)
+            bandwidth = np.sqrt(median_sq / 2.0)
+            if bandwidth < 1e-6:
+                bandwidth = 1.0
+        else:
             bandwidth = 1.0
+            
+    gamma = 1.0 / (2.0 * (bandwidth ** 2))
     
-    gamma = 1.0 / (2 * bandwidth ** 2)
+    K_ss = _rbf_kernel(source_arr, source_arr, gamma)
+    K_tt = _rbf_kernel(target_arr, target_arr, gamma)
+    K_st = _rbf_kernel(source_arr, target_arr, gamma)
     
-    K_ss = _rbf_kernel(source, source, gamma)
-    K_tt = _rbf_kernel(target, target, gamma)
-    K_st = _rbf_kernel(source, target, gamma)
-    
-    n = len(source)
-    m = len(target)
-    
-    # Unbiased estimator
-    np.fill_diagonal(K_ss, 0)
-    np.fill_diagonal(K_tt, 0)
-    
-    mmd2 = (K_ss.sum() / (n * (n - 1)) +
-             K_tt.sum() / (m * (m - 1)) -
-             2 * K_st.sum() / (n * m))
-    
-    return float(max(mmd2, 0.0))
+    if unbiased:
+        # Unbiased estimator: exclude diagonals (n*(n-1))
+        if n < 2 or m < 2:
+            # Fallback to biased for single points
+            return float(K_ss.mean() + K_tt.mean() - 2.0 * K_st.mean())
+        np.fill_diagonal(K_ss, 0.0)
+        np.fill_diagonal(K_tt, 0.0)
+        mmd2 = (K_ss.sum() / (n * (n - 1)) +
+                K_tt.sum() / (m * (m - 1)) -
+                2.0 * K_st.sum() / (n * m))
+    else:
+        # Biased V-statistic estimator
+        mmd2 = K_ss.mean() + K_tt.mean() - 2.0 * K_st.mean()
+        mmd2 = max(0.0, mmd2)
+        
+    return float(mmd2)
 
 
 def _pairwise_sq_dists(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
-    """Compute pairwise squared Euclidean distances."""
+    """Compute pairwise squared Euclidean distances with numerical non-negativity guard."""
     XX = np.sum(X ** 2, axis=1, keepdims=True)
     YY = np.sum(Y ** 2, axis=1, keepdims=True)
-    return XX + YY.T - 2 * X @ Y.T
+    dists = XX + YY.T - 2.0 * np.dot(X, Y.T)
+    return np.maximum(dists, 0.0)
 
 
 def _rbf_kernel(X: np.ndarray, Y: np.ndarray, gamma: float) -> np.ndarray:

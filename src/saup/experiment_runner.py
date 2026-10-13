@@ -79,12 +79,24 @@ logger = logging.getLogger(__name__)
 class ExperimentRunner:
     """Orchestrates SAUP experiments for a given dataset."""
 
-    def __init__(self, config: Optional[Dict] = None, dataset_name: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[Dict] = None,
+        dataset_name: Optional[str] = None,
+        results_dir: Optional[str] = None,
+        figures_dir: Optional[str] = None,
+    ):
         if config is None:
             config = load_config()
         self.config = config
         self.seed = config.get("random_seed", 42)
         ensure_directories(config)
+
+        # Output directory resolution (allows targeting audit_corrected without mutating original)
+        self.results_dir = resolve_path(results_dir or config.get("output", {}).get("results_dir", "reports/results"))
+        self.figures_dir = resolve_path(figures_dir or config.get("output", {}).get("figures_dir", "reports/figures"))
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.figures_dir.mkdir(parents=True, exist_ok=True)
 
         # Dataset resolution: explicit arg > config > default "adult"
         self.dataset_name = dataset_name or config.get("dataset", {}).get("name", "adult")
@@ -151,7 +163,7 @@ class ExperimentRunner:
                 json.dump(summary, f, indent=2, default=str)
 
         # Plots
-        fig_dir = self.config["output"]["figures_dir"]
+        fig_dir = str(self.figures_dir)
         target = self.dataset_spec.target_col
         plot_class_distribution(
             train_df[target].values,
@@ -283,7 +295,7 @@ class ExperimentRunner:
                     cm,
                     f"Confusion Matrix - {name} ({self.dataset_name})",
                     f"confusion_matrix_{self.dataset_name}_{name}",
-                    self.config["output"]["figures_dir"],
+                    str(self.figures_dir),
                 )
 
                 logger.info(
@@ -295,14 +307,13 @@ class ExperimentRunner:
                 logger.error("Failed to train %s on %s: %s", name, self.dataset_name, e)
 
         results_df = pd.DataFrame(results)
-        results_path = resolve_path(self.config["output"]["results_dir"])
-        results_path.mkdir(parents=True, exist_ok=True)
-        results_df.to_csv(results_path / f"{self.dataset_name}_baseline_results.csv", index=False)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(self.results_dir / f"{self.dataset_name}_baseline_results.csv", index=False)
         if self.dataset_name == "adult":
-            results_df.to_csv(results_path / "baseline_results.csv", index=False)
+            results_df.to_csv(self.results_dir / "baseline_results.csv", index=False)
 
         if len(results_df) > 0:
-            plot_model_comparison(results_df, fig_dir=self.config["output"]["figures_dir"])
+            plot_model_comparison(results_df, fig_dir=str(self.figures_dir))
 
         # Model selection using policy-validation split
         if self.splits is not None and len(results) > 0:
@@ -361,7 +372,7 @@ class ExperimentRunner:
             }
 
             # Reliability diagrams
-            fig_dir = self.config["output"]["figures_dir"]
+            fig_dir = str(self.figures_dir)
             plot_reliability_diagram(
                 self.y_test, probas_test[:, 1],
                 f"Reliability - {name} ({self.dataset_name}, Uncalibrated)",
@@ -510,14 +521,13 @@ class ExperimentRunner:
                         )
 
         results_df = pd.DataFrame(all_results)
-        results_path = resolve_path(self.config["output"]["results_dir"])
-        results_path.mkdir(parents=True, exist_ok=True)
-        results_df.to_csv(results_path / f"{self.dataset_name}_shift_experiment_results.csv", index=False)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(self.results_dir / f"{self.dataset_name}_shift_experiment_results.csv", index=False)
         if self.dataset_name == "adult":
-            results_df.to_csv(results_path / "shift_experiment_results.csv", index=False)
+            results_df.to_csv(self.results_dir / "shift_experiment_results.csv", index=False)
 
         # Plots
-        fig_dir = self.config["output"]["figures_dir"]
+        fig_dir = str(self.figures_dir)
         if len(results_df) > 0:
             plot_coverage_by_scenario(results_df, fig_dir=fig_dir)
             plot_set_size_by_scenario(results_df, fig_dir=fig_dir)
@@ -533,8 +543,9 @@ class ExperimentRunner:
         run_id = str(uuid.uuid4())[:8]
         start = time.time()
 
-        # Source data for shifting: test_df if source scenario, else train split
-        source_df = self.test_df if scenario == "source" else self.splits["train"]
+        # Strict test isolation: ALL test-time scenarios (source and shifted) use held-out test_df
+        # This guarantees 0% overlap with training/calibration splits.
+        source_df = self.test_df
         shifted_df, shift_meta = generate_shift(
             source_df,
             scenario=scenario,
@@ -610,7 +621,7 @@ class ExperimentRunner:
 
         # Shift analysis plot for first seed
         if seed == self.seed and shift_report:
-            fig_dir = self.config["output"]["figures_dir"]
+            fig_dir = str(self.figures_dir)
             plot_shift_analysis(
                 shift_report,
                 f"shift_analysis_{self.dataset_name}_{scenario}_{severity}",
@@ -676,7 +687,8 @@ class ExperimentRunner:
                 sev_list = ["none"] if scenario == "source" else severities
                 for severity in sev_list:
                     try:
-                        source_df = self.test_df if scenario == "source" else self.splits["train"]
+                        # Strict test isolation: sample from held-out test_df only
+                        source_df = self.test_df
                         shifted_df, shift_meta = generate_shift(
                             source_df,
                             scenario=scenario,
@@ -723,10 +735,16 @@ class ExperimentRunner:
                             "n_samples": len(y_shifted),
                             **cls_m,
                             **conf_m,
-                            **sel_m,
-                            "accept_rate": summary["accept_rate"],
-                            "set_rate": summary["set_rate"],
-                            "abstention_rate": summary["abstain_rate"],
+                            "accepted_fraction": summary["accepted_fraction"],
+                            "prediction_set_fraction": summary["prediction_set_fraction"],
+                            "abstention_rate": summary["abstention_rate"],
+                            "accept_rate": summary["accepted_fraction"],
+                            "set_rate": summary["prediction_set_fraction"],
+                            "abstain_rate": summary["abstention_rate"],
+                            "accepted_prediction_accuracy": sel_m["accepted_prediction_accuracy"],
+                            "selective_accuracy": sel_m["selective_accuracy"],
+                            "selective_risk": sel_m["selective_risk"],
+                            "accepted_coverage": sel_m["accepted_coverage"],
                             "mean_confidence": summary["mean_confidence"],
                             "adaptation_method": summary["adaptation_method"],
                             "shift_severity_score": summary["shift_severity"],
@@ -736,7 +754,7 @@ class ExperimentRunner:
                         logger.info(
                             "SAUP [%s] %s/%s: acc=%.4f accept=%.2f abstain=%.2f",
                             self.dataset_name, scenario, severity,
-                            cls_m["accuracy"], summary["accept_rate"], summary["abstain_rate"],
+                            cls_m["accuracy"], summary["accepted_fraction"], summary["abstention_rate"],
                         )
                     except Exception as e:
                         logger.error(
@@ -745,12 +763,12 @@ class ExperimentRunner:
                         )
 
         results_df = pd.DataFrame(all_results)
-        results_path = resolve_path(self.config["output"]["results_dir"])
-        results_df.to_csv(results_path / f"{self.dataset_name}_saup_results.csv", index=False)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(self.results_dir / f"{self.dataset_name}_saup_results.csv", index=False)
         if self.dataset_name == "adult":
-            results_df.to_csv(results_path / "saup_results.csv", index=False)
+            results_df.to_csv(self.results_dir / "saup_results.csv", index=False)
 
-        fig_dir = self.config["output"]["figures_dir"]
+        fig_dir = str(self.figures_dir)
         if len(results_df) > 0 and "abstention_rate" in results_df.columns:
             plot_abstention_vs_severity(
                 results_df,
@@ -773,13 +791,38 @@ class ExperimentRunner:
         cc = self.conformal_classifiers.get(model_name)
         alpha = self.config.get("conformal", {}).get("alpha", 0.10)
 
+        # Build full SAUP decision engine for true ablation comparison
+        decision_cfg = self.config.get("decision", {})
+        engine = SAUPDecisionEngine(
+            model=model,
+            preprocessor=self.preprocessor,
+            calibrator=calibrator or TemperatureScaler(),
+            conformal=cc or SplitConformalClassifier(),
+            shift_detector=self.shift_detector or ShiftDetector(),
+            bbse=self.bbse,
+            confidence_threshold=decision_cfg.get("confidence_threshold", 0.70),
+            set_size_threshold=decision_cfg.get("set_size_threshold", 1),
+            abstain_shift_severity=decision_cfg.get("abstain_shift_severity", 0.8),
+            min_ess_ratio=decision_cfg.get("min_ess_ratio", 0.1),
+        )
+
+        X_pol, y_pol = prepare_features_target(
+            self.splits["policy"],
+            target_col=self.dataset_spec.target_col,
+            numerical_features=self.dataset_spec.numerical_features,
+            categorical_features=self.dataset_spec.categorical_features,
+        )
+        X_pol_t = transform_data(self.preprocessor, X_pol)
+        preds_pol, _ = predict(model, X_pol_t)
+
         scenarios = ["covariate", "label", "mixed"]
         variants = ["uncalibrated", "calibrated_only", "conformal_only", "full_saup"]
         all_results = []
 
         for scenario in scenarios:
+            # Shift generated from held-out test set
             shifted_df, _ = generate_shift(
-                self.splits["train"],
+                self.test_df,
                 scenario=scenario,
                 severity="moderate",
                 seed=self.seed,
@@ -797,7 +840,6 @@ class ExperimentRunner:
             preds, probas = predict(model, X_sh_t)
 
             for variant in variants:
-                cls_m = classification_metrics(y_sh, preds, probas)
                 row = {
                     "variant": variant,
                     "dataset": self.dataset_name,
@@ -805,40 +847,111 @@ class ExperimentRunner:
                     "severity": "moderate",
                     "seed": self.seed,
                     "model_name": model_name,
-                    **cls_m,
+                    "n_samples": len(y_sh),
                 }
 
                 if variant == "uncalibrated":
+                    cls_m = classification_metrics(y_sh, preds, probas)
                     cal_m = calibration_metrics(y_sh, probas)
+                    row.update(cls_m)
                     row.update(cal_m)
-                elif variant in ("calibrated_only", "conformal_only", "full_saup"):
-                    if calibrator:
-                        cal_probas = calibrator.transform(probas)
-                        cal_m = calibration_metrics(y_sh, cal_probas)
-                        row.update(cal_m)
+                    row.update({
+                        "accepted_fraction": 1.0,
+                        "prediction_set_fraction": 0.0,
+                        "abstention_rate": 0.0,
+                        "accepted_coverage": 1.0,
+                        "accepted_prediction_accuracy": cls_m["accuracy"],
+                        "selective_risk": 1.0 - cls_m["accuracy"],
+                    })
 
-                        if variant in ("conformal_only", "full_saup") and cc:
-                            pred_sets = cc.predict_sets(cal_probas)
-                            conf_m = conformal_metrics(y_sh, pred_sets, alpha)
-                            row.update(conf_m)
+                elif variant == "calibrated_only":
+                    cal_probas = calibrator.transform(probas) if calibrator else probas
+                    cal_preds = np.argmax(cal_probas, axis=1)
+                    cls_m = classification_metrics(y_sh, cal_preds, cal_probas)
+                    cal_m = calibration_metrics(y_sh, cal_probas)
+                    row.update(cls_m)
+                    row.update(cal_m)
+                    row.update({
+                        "accepted_fraction": 1.0,
+                        "prediction_set_fraction": 0.0,
+                        "abstention_rate": 0.0,
+                        "accepted_coverage": 1.0,
+                        "accepted_prediction_accuracy": cls_m["accuracy"],
+                        "selective_risk": 1.0 - cls_m["accuracy"],
+                    })
 
-                        if variant == "full_saup":
-                            confidence = np.max(cal_probas, axis=1)
-                            thresh = self.config.get("decision", {}).get("confidence_threshold", 0.70)
-                            accepted = confidence >= thresh
-                            sel_m = selective_prediction_metrics(y_sh, preds, accepted)
-                            row.update(sel_m)
+                elif variant == "conformal_only":
+                    cal_probas = calibrator.transform(probas) if calibrator else probas
+                    cal_preds = np.argmax(cal_probas, axis=1)
+                    cls_m = classification_metrics(y_sh, cal_preds, cal_probas)
+                    cal_m = calibration_metrics(y_sh, cal_probas)
+                    row.update(cls_m)
+                    row.update(cal_m)
+                    if cc:
+                        pred_sets = cc.predict_sets(cal_probas)
+                        conf_m = conformal_metrics(y_sh, pred_sets, alpha)
+                        row.update(conf_m)
+                    row.update({
+                        "accepted_fraction": 0.0,
+                        "prediction_set_fraction": 1.0,
+                        "abstention_rate": 0.0,
+                        "accepted_coverage": 0.0,
+                        "accepted_prediction_accuracy": float("nan"),
+                        "selective_risk": float("nan"),
+                    })
+
+                elif variant == "full_saup":
+                    feature_cols = [
+                        c for c in (self.dataset_spec.numerical_features + self.dataset_spec.categorical_features)
+                        if c in shifted_df.columns
+                    ]
+                    X_shifted_df = shifted_df[feature_cols]
+                    results, shift_report = engine.predict_batch(
+                        X_shifted_df,
+                        X_source_transformed=self.X_train,
+                        source_preds=preds_pol,
+                        source_labels=y_pol,
+                    )
+                    summary = engine.summarize_results(results)
+                    predicted = np.array([r.predicted_class for r in results])
+                    accepted_mask = np.array([r.action == DecisionAction.ACCEPT for r in results])
+                    adapted_probas = np.array([r.calibrated_probability for r in results])
+
+                    cls_m = classification_metrics(y_sh, predicted, adapted_probas)
+                    cal_m = calibration_metrics(y_sh, adapted_probas)
+                    sel_m = selective_prediction_metrics(y_sh, predicted, accepted_mask)
+                    pred_sets = [r.prediction_set for r in results]
+                    conf_m = conformal_metrics(y_sh, pred_sets, alpha)
+
+                    row.update(cls_m)
+                    row.update(cal_m)
+                    row.update(conf_m)
+                    row.update({
+                        "accepted_fraction": summary["accepted_fraction"],
+                        "prediction_set_fraction": summary["prediction_set_fraction"],
+                        "abstention_rate": summary["abstention_rate"],
+                        "accept_rate": summary["accepted_fraction"],
+                        "set_rate": summary["prediction_set_fraction"],
+                        "abstain_rate": summary["abstention_rate"],
+                        "accepted_prediction_accuracy": sel_m["accepted_prediction_accuracy"],
+                        "selective_accuracy": sel_m["selective_accuracy"],
+                        "selective_risk": sel_m["selective_risk"],
+                        "accepted_coverage": sel_m["accepted_coverage"],
+                        "mean_confidence": summary["mean_confidence"],
+                        "adaptation_method": summary["adaptation_method"],
+                        "shift_severity_score": summary["shift_severity"],
+                    })
 
                 all_results.append(row)
 
         results_df = pd.DataFrame(all_results)
-        results_path = resolve_path(self.config["output"]["results_dir"])
-        results_df.to_csv(results_path / f"{self.dataset_name}_ablation_results.csv", index=False)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(self.results_dir / f"{self.dataset_name}_ablation_results.csv", index=False)
         if self.dataset_name == "adult":
-            results_df.to_csv(results_path / "ablation_results.csv", index=False)
+            results_df.to_csv(self.results_dir / "ablation_results.csv", index=False)
 
         if len(results_df) > 0:
-            plot_ablation_study(results_df, fig_dir=self.config["output"]["figures_dir"])
+            plot_ablation_study(results_df, fig_dir=str(self.figures_dir))
 
         return results_df
 

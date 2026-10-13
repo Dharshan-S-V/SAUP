@@ -134,11 +134,12 @@ class SAUPDecisionEngine:
         ess_ratio = 1.0
         
         if shift_detected and severity_score < self.abstain_shift_severity:
-            # Try adaptation based on detected shift type
+            # Determine appropriate adaptation strategy
             ks_detected = shift_report["overall"]["ks_detected"]
+            psi_detected = shift_report["overall"]["psi_detected"]
             
             if ks_detected and X_source_transformed is not None:
-                # Possible covariate shift → try importance weighting
+                # Covariate shift indicated -> importance weighting
                 try:
                     _, target_weights, ess = estimate_density_ratios(
                         X_source_transformed, X_target_transformed
@@ -152,10 +153,10 @@ class SAUPDecisionEngine:
                 except Exception as e:
                     logger.warning("Density ratio estimation failed: %s", e)
                     adaptation_method = "source_calibrated_cautious"
-            
-            if (self.bbse is not None and source_preds is not None 
-                    and source_labels is not None):
-                # Try BBSE for label shift
+            elif (not ks_detected or not psi_detected) and (
+                self.bbse is not None and source_preds is not None and source_labels is not None
+            ):
+                # Pure label shift indicated (features unchanged) -> BBSE prior correction
                 try:
                     target_preds = np.argmax(adapted_probas, axis=1)
                     target_priors, bbse_info = self.bbse.estimate_target_priors(target_preds)
@@ -168,6 +169,9 @@ class SAUPDecisionEngine:
                         adaptation_method = "bbse_corrected"
                 except Exception as e:
                     logger.warning("BBSE correction failed: %s", e)
+            else:
+                # Mixed or complex shift -> cautious calibration
+                adaptation_method = "source_calibrated_cautious"
         
         # Step 4: Generate conformal prediction sets
         prediction_sets = self.conformal.predict_sets(adapted_probas)
@@ -299,7 +303,9 @@ class SAUPDecisionEngine:
     def summarize_results(
         self, results: List[PredictionResult]
     ) -> Dict[str, Any]:
-        """Summarize batch prediction results.
+        """Summarize batch prediction results with mutually exclusive outcomes.
+        
+        Guarantees: accepted_fraction + prediction_set_fraction + abstention_rate == 1.0.
         
         Args:
             results: List of PredictionResult objects.
@@ -309,20 +315,38 @@ class SAUPDecisionEngine:
         """
         n = len(results)
         if n == 0:
-            return {"n": 0}
+            return {
+                "n": 0,
+                "accepted_fraction": 0.0,
+                "prediction_set_fraction": 0.0,
+                "abstention_rate": 1.0,
+                "accept_rate": 0.0,
+                "set_rate": 0.0,
+                "abstain_rate": 1.0,
+            }
         
         actions = [r.action for r in results]
         n_accept = sum(1 for a in actions if a == DecisionAction.ACCEPT)
         n_set = sum(1 for a in actions if a == DecisionAction.SET_PREDICTION)
         n_abstain = sum(1 for a in actions if a == DecisionAction.ABSTAIN)
         
+        accepted_fraction = n_accept / n
+        prediction_set_fraction = n_set / n
+        abstention_rate = n_abstain / n
+        
+        # Verify mutual exclusivity within numerical tolerance
+        assert abs((accepted_fraction + prediction_set_fraction + abstention_rate) - 1.0) < 1e-6
+        
         return {
             "n": n,
-            "accept_rate": n_accept / n,
-            "set_rate": n_set / n,
-            "abstain_rate": n_abstain / n,
+            "accepted_fraction": accepted_fraction,
+            "prediction_set_fraction": prediction_set_fraction,
+            "abstention_rate": abstention_rate,
+            "accept_rate": accepted_fraction,
+            "set_rate": prediction_set_fraction,
+            "abstain_rate": abstention_rate,
             "mean_confidence": float(np.mean([r.confidence for r in results])),
             "mean_set_size": float(np.mean([len(r.prediction_set) for r in results])),
-            "adaptation_method": results[0].adaptation_method,
-            "shift_severity": results[0].shift_severity,
+            "adaptation_method": results[0].adaptation_method if results else "none",
+            "shift_severity": results[0].shift_severity if results else 0.0,
         }
