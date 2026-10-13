@@ -1,0 +1,28 @@
+# Experiment configurations for SAUP
+experiments:
+  baseline:
+    description: "Baseline model comparison on source test data"
+    models: ["logistic_regression", "random_forest", "mlp"]
+    scenarios: ["source"]
+    seeds: [42]
+
+  shift_analysis:
+    description: "Distribution shift experiments"
+    models: ["random_forest"]
+    scenarios: ["covariate", "label", "mixed", "severe"]
+    severities: ["mild", "moderate", "severe"]
+    seeds: [42, 123, 2024]
+
+  ablation:
+    description: "Ablation study for SAUP components"
+    models: ["random_forest"]
+    scenarios: ["covariate", "label", "mixed"]
+    severities: ["moderate"]
+    seeds: [42]
+    variants:
+      - "uncalibrated"
+      - "calibrated_only"
+      - "conformal_only"
+      - "shift_detect_only"
+      - "no_adaptation"
+      - "full_saup"

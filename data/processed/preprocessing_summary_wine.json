@@ -1,0 +1,81 @@
+{
+  "train_rows": 5197,
+  "test_rows": 1300,
+  "train_columns": [
+    "fixed acidity",
+    "volatile acidity",
+    "citric acid",
+    "residual sugar",
+    "chlorides",
+    "free sulfur dioxide",
+    "total sulfur dioxide",
+    "density",
+    "pH",
+    "sulphates",
+    "alcohol",
+    "quality",
+    "wine_type",
+    "quality_binary"
+  ],
+  "train_missing": {
+    "fixed acidity": 0,
+    "volatile acidity": 0,
+    "citric acid": 0,
+    "residual sugar": 0,
+    "chlorides": 0,
+    "free sulfur dioxide": 0,
+    "total sulfur dioxide": 0,
+    "density": 0,
+    "pH": 0,
+    "sulphates": 0,
+    "alcohol": 0,
+    "quality": 0,
+    "wine_type": 0,
+    "quality_binary": 0
+  },
+  "test_missing": {
+    "fixed acidity": 0,
+    "volatile acidity": 0,
+    "citric acid": 0,
+    "residual sugar": 0,
+    "chlorides": 0,
+    "free sulfur dioxide": 0,
+    "total sulfur dioxide": 0,
+    "density": 0,
+    "pH": 0,
+    "sulphates": 0,
+    "alcohol": 0,
+    "quality": 0,
+    "wine_type": 0,
+    "quality_binary": 0
+  },
+  "train_duplicates": 749,
+  "test_duplicates": 47,
+  "train_label_dist": {
+    "0": 4176,
+    "1": 1021
+  },
+  "test_label_dist": {
+    "0": 1044,
+    "1": 256
+  },
+  "numerical_features": [
+    "fixed acidity",
+    "volatile acidity",
+    "citric acid",
+    "residual sugar",
+    "chlorides",
+    "free sulfur dioxide",
+    "total sulfur dioxide",
+    "density",
+    "pH",
+    "sulphates",
+    "alcohol"
+  ],
+  "categorical_features": [
+    "wine_type"
+  ],
+  "dataset": "wine_quality_both",
+  "threshold": 7,
+  "design_decision": "Quality scores range 3-9. Quality >= 7 defines high quality (~20% positive class). Scores below this represent standard/table wines."
+}

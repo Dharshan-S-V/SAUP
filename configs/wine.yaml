@@ -1,0 +1,88 @@
+# SAUP Configuration for UCI Wine Quality Dataset
+project:
+  name: "SAUP-WineQuality"
+  full_title: "An Adaptive Uncertainty-Aware ML Framework for Reliable Prediction Under Distribution Shift"
+  version: "1.0.0"
+
+dataset:
+  name: "wine"
+  variant: "both"
+  threshold: 7
+
+data:
+  url: "https://archive.ics.uci.edu/static/public/186/wine+quality.zip"
+  raw_dir: "data/raw/wine"
+  processed_dir: "data/processed"
+  required_files:
+    - "winequality-red.csv"
+    - "winequality-white.csv"
+
+random_seed: 42
+additional_seeds: [123, 2024]
+
+splitting:
+  train_ratio: 0.70
+  calibration_ratio: 0.10
+  conformal_ratio: 0.10
+  policy_ratio: 0.10
+  test_ratio: 0.20
+
+models:
+  logistic_regression:
+    max_iter: 2000
+    C: 1.0
+    solver: "lbfgs"
+  random_forest:
+    n_estimators: 300
+    max_depth: 20
+    min_samples_leaf: 5
+    n_jobs: -1
+  mlp:
+    hidden_layer_sizes: [128, 64]
+    activation: "relu"
+    solver: "adam"
+    max_iter: 500
+    early_stopping: true
+    validation_fraction: 0.15
+    alpha: 0.001
+  xgboost:
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.1
+    use_label_encoder: false
+    eval_metric: "logloss"
+
+calibration:
+  method: "temperature_scaling"
+  lr: 0.01
+  max_iter: 1000
+
+conformal:
+  alpha: 0.10
+  nominal_coverage: 0.90
+  weight_clip: 20.0
+
+shift:
+  severities:
+    mild: 0.3
+    moderate: 0.6
+    severe: 1.0
+  psi_thresholds:
+    minor: 0.1
+    moderate: 0.2
+    major: 0.25
+  ks_alpha: 0.05
+  mmd_n_permutations: 100
+  mmd_subsample: 2000
+
+decision:
+  confidence_threshold: 0.70
+  set_size_threshold: 1
+  abstain_shift_severity: 0.8
+  min_ess_ratio: 0.1
+
+output:
+  models_dir: "models"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"
+  results_dir: "reports/results"

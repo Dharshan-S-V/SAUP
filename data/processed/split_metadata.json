@@ -1,0 +1,33 @@
+{
+  "random_seed": 42,
+  "splits": {
+    "train": {
+      "n_rows": 22792,
+      "label_distribution": {
+        "0": 17303,
+        "1": 5489
+      }
+    },
+    "calibration": {
+      "n_rows": 3256,
+      "label_distribution": {
+        "0": 2472,
+        "1": 784
+      }
+    },
+    "conformal": {
+      "n_rows": 3256,
+      "label_distribution": {
+        "0": 2472,
+        "1": 784
+      }
+    },
+    "policy": {
+      "n_rows": 3257,
+      "label_distribution": {
+        "0": 2473,
+        "1": 784
+      }
+    }
+  }
+}

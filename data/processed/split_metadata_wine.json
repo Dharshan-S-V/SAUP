@@ -1,0 +1,10 @@
+{
+  "dataset": "wine",
+  "random_seed": 42,
+  "splits": {
+    "train": 3637,
+    "calibration": 519,
+    "conformal": 520,
+    "policy": 521
+  }
+}

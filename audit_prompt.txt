@@ -1,0 +1,533 @@
+<USER_REQUEST>
+# SAUP — FULL SOURCE-CODE AUDIT, BUG FIXING, EXPERIMENT REVALIDATION AND REPORT CORRECTION
+
+Act as a senior Machine Learning Research Engineer, Python Architect, Statistical ML Researcher, Software QA Engineer, and research-paper reviewer.
+
+You are working on an existing, implemented project:
+
+**SAUP — Shift-Aware Adaptive Uncertainty Prediction**
+
+Project title:
+**An Adaptive Uncertainty-Aware Machine Learning Framework for Reliable Prediction Under Distribution Shift**
+
+The project already contains Python source code, models, datasets, result CSVs, visualizations, tests, a Streamlit application, and reports. It has been run on UCI Adult, UCI Bank Marketing, and UCI Wine Quality.
+
+Your task is to audit the actual repository, identify and fix real implementation and experimental-design defects, rerun affected experiments, validate results, and regenerate the documentation.
+
+**Do not rebuild the project from scratch. Do not destroy the original results. Do not invent or manipulate metrics to improve the appearance of the research.**
+
+## PHASE 1 — INSPECT THE COMPLETE REPOSITORY
+
+Inspect the actual code and configuration before making changes, especially:
+
+- `src/saup/conformal.py`
+- `src/saup/shift_detection.py`
+- `src/saup/shift_generation.py`
+- `src/saup/decision_engine.py`
+- `src/saup/metrics.py`
+- `src/saup/experiment_runner.py`
+- `src/saup/label_shift.py`
+- `src/saup/calibration.py`
+- `src/saup/preprocessing.py`
+- `src/saup/splitting.py`
+- `src/saup/data_loader.py`
+- `src/saup/visualization.py`
+- `src/saup/reporting.py`
+- `scripts/run_all.py`
+- `scripts/run_baselines.py`
+- `scripts/run_shift_experiments.py`
+- `scripts/run_ablation.py`
+- `app/streamlit_app.py`
+- all YAML configuration files
+- all files under `tests/`
+- all result CSVs, figures, and research reports
+
+Trace each reported metric back to the code that computes it.
+
+Before modifying anything:
+
+1. Record the current Git status, if Git is available.
+2. Preserve all existing changes.
+3. Create a backup or a new Git branch if possible.
+4. Keep original experiment outputs immutable.
+5. Create a separate audit directory at `reports/audit_corrected/`.
+6. Write an initial `audit_findings.md` containing the defects found, evidence, severity, and planned fixes.
+
+Do not assume that a test passing means the algorithm is statistically correct. Review both software correctness and the mathematical assumptions.
+
+## PHASE 2 — FIX WEIGHTED CONFORMAL PREDICTION
+
+Audit `WeightedConformalClassifier.predict_sets()` in `src/saup/conformal.py`.
+
+The current implementation uses a weighted-tail calculation that does not correctly account for the test-point weight in the numerator, and it uses strict comparisons that may mishandle tied scores.
+
+Replace it with a mathematically justified importance-weighted conformal classification implementation.
+
+Requirements:
+
+1. Clearly define the nonconformity score:
+   `s(x, y) = 1 - p(y | x)`.
+
+2. Store calibration nonconformity scores and their corresponding non-negative importance weights.
+
+3. Implement the selected weighted conformal p-value or weighted-quantile formulation consistently.
+
+4. For the standard test-point-mass formulation, use the calibration weights of scores greater than or equal to the candidate test score, add the test-point weight to the numerator, and include the test-point weight in the denominator.
+
+5. Document the precise inclusion rule and tie handling. Use one mathematically justified convention consistently.
+
+6. Include a class in the prediction set only when the chosen conformal inclusion criterion is satisfied.
+
+7. Validate array dimensions, finite scores, non-negative weights, and positive total weight.
+
+8. Handle zero weights and extreme weights safely.
+
+9. Preserve the distinction between known importance ratios and estimated importance ratios.
+
+10. Do not claim exact finite-sample validity when density ratios are estimated, clipped, or otherwise violate the assumptions of the chosen method.
+
+Write unit tests covering:
+- manually calculated weighted p-values;
+- test-point weight contribution;
+- tied nonconformity scores;
+- very small and large weights;
+- zero weights;
+- empty prediction sets;
+- full prediction sets;
+- reproducibility;
+- malformed inputs.
+
+Use an independently calculated mathematical reference in the tests rather than simply comparing the method with itself.
+
+After correcting the implementation, rerun the affected conformal and SAUP experiments.
+
+## PHASE 3 — AUDIT SHIFT DETECTION AND MMD
+
+Inspect `maximum_mean_discrepancy()` and `ShiftDetector` in `src/saup/shift_detection.py`.
+
+Investigate why the Adult results contain repeated exact-zero or near-zero MMD values despite substantial PSI values.
+
+Do not assume PSI and MMD must have matching magnitudes. They measure different properties.
+
+Check:
+
+- whether source and target matrices are actually different;
+- whether the same numerical feature order is used;
+- whether missing values or infinities occur;
+- whether the RBF kernel bandwidth is appropriate;
+- whether large-scale features dominate the kernel;
+- whether numerical precision is sufficient;
+- whether MMD values are accidentally rounded or replaced with zero;
+- whether source-versus-source bootstrap thresholds are calculated correctly;
+- whether the comparison uses independent source and target samples;
+- whether subsampling is deterministic and reproducible.
+
+Implement a documented and consistent scaling strategy for MMD. Fit any learned transformation using the source/reference data only, then apply it unchanged to target data. Do not use target labels.
+
+Use a defensible bandwidth-selection method, such as a documented median-distance heuristic, with guards for duplicate points and zero distances.
+
+Distinguish biased and unbiased MMD estimators explicitly if both are implemented. Handle small sample sizes and computational limits correctly.
+
+Calibrate a detection threshold using independent source-reference comparisons or an appropriate permutation/bootstrap procedure. Document the threshold procedure and its limitations.
+
+Add tests where:
+- two samples come from the same distribution;
+- two samples have clearly different distributions;
+- one feature has a much larger scale than another;
+- constant features occur;
+- duplicated records occur;
+- small sample sizes are used;
+- the result is finite and reproducible.
+
+Recompute MMD and its detection decision for every affected shift scenario. Save unrounded precision in machine-readable results.
+
+Keep KS and PSI definitions consistent. Continue using multiple-testing correction for multiple KS tests. Report both statistical significance and effect size where relevant.
+
+Do not equate a statistically significant shift with a practically important shift.
+
+## PHASE 4 — AUDIT SHIFT GENERATION AND DATA LEAKAGE
+
+Inspect every generator in `src/saup/shift_generation.py`:
+
+- covariate shift;
+- label shift;
+- mixed shift;
+- severe/OOD shift.
+
+For each generator, document:
+
+1. Source population.
+2. Target construction mechanism.
+3. Whether sampling uses replacement.
+4. Which features are modified or used for selection.
+5. Whether true labels are used to construct the target.
+6. How the construction affects P(X), P(Y), and P(X|Y).
+7. The limitations of the resulting synthetic population.
+
+### Covariate shift
+
+The target-selection probability must depend on features, not directly on labels.
+
+Measure how the induced sampling changes the label proportions, since feature-dependent selection can indirectly change P(Y).
+
+Document that the construction approximates covariate shift only under appropriate assumptions; do not claim that P(Y|X) is unchanged in every finite sample or every generated dataset.
+
+### Label shift
+
+Change the target class prior using class-conditional sampling.
+
+Verify that the feature distribution within each class is preserved by the intended sampling design, subject to finite-sample variation.
+
+True labels may be used by the offline generator to construct the experimental target population. They must not be supplied to the deployment-time shift detector, calibrator, adaptation algorithm, or decision policy.
+
+### Mixed shift
+
+Verify that both feature and label distributions change as intended. Explicitly report that the pure covariate-shift and pure label-shift assumptions may not hold.
+
+### Severe/OOD shift
+
+Keep this explicitly labelled as a synthetic stress test. Document the numerical perturbations, valid ranges, tail-selection process, and any potential creation of implausible records.
+
+### Duplicate and overlap audit
+
+Because sampling with replacement is currently used, calculate:
+
+- duplicate-row counts;
+- unique-row fraction;
+- duplicate frequency;
+- overlap between training and calibration splits;
+- overlap between the final test set and generated target records;
+- whether shifted test rows are resampled from a source population already used for training.
+
+Preserve the official held-out test set. Do not accidentally evaluate the model on training records or tune the model on target labels.
+
+If the experiment deliberately reuses a separate source test population to create a synthetic target, clearly document the dependence introduced by resampling.
+
+Where necessary, implement an alternative no-replacement or appropriately separated sampling design and compare the results.
+
+Do not delete difficult results merely because they look unusual.
+
+## PHASE 5 — FIX SAUP DECISION METRICS
+
+Inspect `src/saup/decision_engine.py`, `src/saup/metrics.py`, and the result aggregation in `src/saup/experiment_runner.py`.
+
+Use precisely defined, mutually exclusive outcomes:
+
+- `ACCEPT`: return an accepted point prediction;
+- `SET_PREDICTION`: return a prediction set according to the declared policy;
+- `ABSTAIN`: make no prediction and recommend review.
+
+Explicitly document how singleton conformal sets are treated. If a singleton is accepted as a point prediction, implement that consistently across all datasets and scenarios.
+
+For every experiment, calculate:
+
+- `accepted_fraction`;
+- `prediction_set_fraction`;
+- `abstention_rate`;
+- `accepted_prediction_accuracy`;
+- `selective_risk`;
+- `accepted_coverage`;
+- `conformal_empirical_coverage`;
+- `conformal_coverage_gap`;
+- `average_prediction_set_size`;
+- `empty_set_rate`;
+- `full_set_rate`;
+- `class_0_coverage`;
+- `class_1_coverage`.
+
+Ensure that:
+
+`accepted_fraction + prediction_set_fraction + abstention_rate = 1`
+
+within a documented numerical tolerance.
+
+Do not use a generic column called `coverage` for both accepted predictions and conformal prediction sets.
+
+Recompute all derived metrics from sample-level predictions and outcomes whenever possible.
+
+For zero accepted predictions, set selective risk and accepted-prediction accuracy to undefined/NaN and explicitly report zero acceptance. Never silently convert undefined metrics to zero.
+
+Investigate why the Adult source row reports an abstention rate of zero in one file while a corresponding source row in another file reports approximately 0.180579.
+
+Trace the source of each row and distinguish:
+- accepted point predictions;
+- prediction-set decisions;
+- actual abstentions;
+- conformal coverage.
+
+The SAUP decision policy must use only permitted information at decision time. It must not access target ground-truth labels.
+
+## PHASE 6 — AUDIT CONFORMAL CALIBRATION AND COVERAGE
+
+Inspect the standard split conformal implementation in `src/saup/conformal.py`.
+
+Verify:
+
+- the nonconformity score;
+- the finite-sample rank;
+- the order statistic;
+- alpha handling;
+- tie handling;
+- empty-set behavior;
+- class-label encoding;
+- probability column ordering;
+- calibration/test split separation.
+
+Use the documented split-conformal quantile:
+
+`k = ceil((n + 1) * (1 - alpha))`
+
+with the appropriate finite-sample handling when the rank exceeds the number of calibration observations.
+
+Check that probability calibration and conformal calibration use the intended separate data splits. If a method requires a different calibration design, implement and document it explicitly.
+
+Recompute prediction sets and empirical coverage from saved probabilities, prediction sets, and held-out labels.
+
+Investigate the reported Bank Marketing source class-1 coverage of approximately 27.98%, alongside overall coverage near 89.88%.
+
+Verify the denominator and class-wise metric definition. If the disparity is real, report it honestly.
+
+Do not claim that standard split conformal prediction guarantees exact nominal coverage under arbitrary distribution shift. Distinguish:
+- source-domain split-conformal assumptions;
+- empirical coverage under synthetic shifts;
+- importance-weighted conformal assumptions;
+- estimated density-ratio limitations;
+- class-conditional coverage.
+
+## PHASE 7 — AUDIT LABEL-SHIFT ESTIMATION
+
+Inspect `src/saup/label_shift.py`.
+
+Verify the BBSE confusion matrix orientation, class order, estimated target prediction frequencies, constrained solution, normalization, and matrix-conditioning checks.
+
+Ensure the estimator uses labelled source validation data and unlabelled target features/predictions only.
+
+Do not provide target labels to BBSE during adaptation.
+
+In offline evaluation only, compare estimated target class priors with actual held-out target class proportions.
+
+Report estimation error and conditioning diagnostics. Do not force an unstable estimate to appear valid.
+
+Do not apply label-prior correction automatically when the estimated label-shift assumptions are contradicted by the observed scenario.
+
+## PHASE 8 — AUDIT TEMPERATURE SCALING
+
+Inspect `src/saup/calibration.py`.
+
+Verify that temperature scaling:
+- uses only the designated probability-calibration split;
+- minimizes a well-defined calibration objective;
+- uses finite numerical values;
+- preserves normalized probabilities;
+- does not use the final test labels;
+- is fitted separately for each model/dataset configuration as appropriate.
+
+Evaluate calibration before and after scaling using Brier score, log loss, ECE, and reliability diagrams.
+
+If calibration worsens a metric, preserve that result and explain it. Do not change metric definitions or select favorable bins after observing test outcomes.
+
+Document the ECE binning rule and keep it consistent throughout the experiments.
+
+## PHASE 9 — REPAIR THE ABLATION STUDY
+
+Inspect `ExperimentRunner.run_ablation()` and the ablation script.
+
+Confirm that every ablation variant actually changes the intended component:
+
+- uncalibrated;
+- calibrated only;
+- conformal only;
+- full SAUP.
+
+Check that variants share the same underlying data split and model where a fair comparison requires it.
+
+Verify that the full SAUP variant executes the actual adaptive decision logic rather than simply copying conformal-only results.
+
+Recompute:
+- classification metrics;
+- calibration metrics;
+- conformal coverage;
+- average set size;
+- selective risk;
+- acceptance and abstention rates.
+
+It is acceptable for accuracy and F1 to remain unchanged when adding calibration or conformal prediction. Explain that these components target different properties.
+
+Do not claim that SAUP outperforms the baselines unless the actual results demonstrate a meaningful and correctly evaluated improvement.
+
+If an ablation is not implemented correctly, fix it and rerun it. Do not manually modify CSV values.
+
+## PHASE 10 — AUDIT THE THREE DATASETS
+
+Preserve the existing datasets and loaders:
+
+1. UCI Adult;
+2. UCI Bank Marketing;
+3. UCI Wine Quality.
+
+### Adult
+
+Verify feature names, missing values, target normalization, preprocessing, and train/calibration/test separation.
+
+### Bank Marketing
+
+Verify the binary `y` target, class imbalance, categorical preprocessing, and removal of `duration` if it is unavailable at prediction time.
+
+Ensure that no post-outcome information is used.
+
+Report class-specific performance and precision/recall in addition to accuracy.
+
+### Wine Quality
+
+Verify the documented target definition:
+
+- quality >= 7 → positive class;
+- quality < 7 → negative class.
+
+Check whether red and white wine records are combined, whether a wine-type indicator is present when needed, and whether duplicate records or shared records occur across splits.
+
+Investigate unusually high accuracy in shifted scenarios. Trace the target generator and evaluation code rather than assuming the result is either valid or invalid.
+
+Document that this is a binary classification formulation of a quality score, not a direct measure of generalization to a new real-world wine population.
+
+## PHASE 11 — FIX MULTI-DATASET REPORTING
+
+The current README and some experimental reports describe Adult-only evaluation, while the repository includes results for three datasets.
+
+Generate consistent reports from the corrected result files:
+
+- `reports/audit_corrected/adult_report.md`
+- `reports/audit_corrected/bank_report.md`
+- `reports/audit_corrected/wine_report.md`
+- `reports/audit_corrected/cross_dataset_comparison.md`
+- `reports/audit_corrected/experimental_report.md`
+- `reports/audit_corrected/methodology.md`
+- `reports/audit_corrected/limitations.md`
+- `reports/audit_corrected/references.md`
+
+Update the README to document all three datasets, actual commands, dependencies, experimental assumptions, and reproducibility instructions.
+
+Report per-dataset and per-scenario results before cross-dataset synthesis. Do not average fundamentally different scenarios indiscriminately.
+
+Separate measured findings from hypotheses and theoretical guarantees.
+
+Do not state that temperature scaling always improves calibration, that conformal coverage is invariant under arbitrary shift, or that SAUP is universally superior unless the validated results support the claim.
+
+## PHASE 12 — REGENERATE RESULTS AND FIGURES
+
+Never edit numerical results directly to make them consistent.
+
+Create corrected results in:
+
+`reports/audit_corrected/results/`
+
+Save:
+- corrected baseline results;
+- corrected shift experiment results;
+- corrected SAUP results;
+- corrected ablation results;
+- corrected unified results;
+- sample-level predictions and decision outcomes where needed;
+- experiment metadata;
+- run logs;
+- random seeds;
+- data checksums.
+
+Recompute all affected figures from the corrected CSVs.
+
+At minimum, regenerate:
+- baseline model comparisons;
+- reliability diagrams;
+- Brier/ECE comparisons;
+- shift detection plots;
+- coverage and prediction-set-size plots;
+- risk–coverage curves;
+- abstention-versus-severity plots;
+- ablation comparisons;
+- cross-dataset comparisons.
+
+Check that every figure matches its source CSV. Include captions and clear axis labels.
+
+Preserve original CSVs, plots, and reports as historical artifacts. Clearly mark which results have been revalidated and which remain unverified.
+
+## PHASE 13 — AUTOMATED TESTING
+
+Run the existing tests, then add tests for every confirmed defect.
+
+Include unit tests for:
+- weighted conformal p-values and ties;
+- standard conformal quantiles;
+- MMD numerical behavior;
+- PSI stability;
+- shift generation;
+- target-label isolation;
+- BBSE conditioning;
+- probability calibration;
+- outcome fractions;
+- class-wise coverage;
+- selective-risk edge cases;
+- result aggregation;
+- report generation.
+
+Run a smoke test on each dataset.
+
+Run at least one complete baseline and one shift experiment for each dataset after the relevant changes. Rerun all affected experiments before regenerating final tables.
+
+Fix genuine failures. If a test cannot run because of a dependency or environment limitation, record the exact reason and a workaround.
+
+Do not report a passing test unless it was executed.
+
+## PHASE 14 — FINAL ACCEPTANCE CRITERIA
+
+The corrected project is complete only when:
+
+1. Original results remain preserved.
+2. Weighted conformal prediction has a verified mathematical implementation.
+3. Standard conformal quantiles and prediction sets are validated.
+4. MMD uses a documented and numerically stable procedure.
+5. Shift scenarios have documented construction and overlap diagnostics.
+6. Target labels are isolated from deployment-time adaptation and decisions.
+7. SAUP outcome fractions are consistent and mutually exclusive.
+8. Coverage definitions are unambiguous.
+9. Class-wise coverage is verified.
+10. All three dataset pipelines run.
+11. Ablation variants execute their intended components.
+12. Corrected CSVs are regenerated from actual experiment outputs.
+13. Figures match the corrected CSVs.
+14. README and research reports describe all three datasets accurately.
+15. Tests and experiment logs are available.
+16. Remaining limitations are documented honestly.
+
+### Final instruction
+
+Begin by inspecting the current source code and running the existing tests. Then implement fixes in dependency order, rerun affected experiments, and regenerate the corrected outputs.
+
+Do not stop after producing a list of issues or creating new files. Execute the code and verify the results.
+
+At completion, provide:
+- the defects confirmed;
+- the code changes made;
+- the tests actually run and their outcomes;
+- the experiments rerun;
+- paths to corrected results, plots, and reports;
+- results that changed after correction;
+- unresolved issues and limitations.
+
+**Scientific correctness is more important than making the reported performance look better.**
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-13T23:41:53+05:30.
+
+The user's current state is as follows:
+Active Document: c:\Users\dhars\Desktop\SAUP\reports\adult_experimental_report.md (LANGUAGE_MARKDOWN)
+Cursor is on line: 1
+Other open documents:
+- c:\Users\dhars\Desktop\SAUP\reports\adult_experimental_report.md (LANGUAGE_MARKDOWN)
+- c:\Users\dhars\Desktop\SAUP\README.md (LANGUAGE_MARKDOWN)
+- c:\Users\dhars\Desktop\SAUP\requirements.txt (LANGUAGE_UNSPECIFIED)
+Running terminal commands:
+- streamlit run app/streamlit_app.py (in c:\Users\dhars\Desktop\SAUP, running for 13m36s)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from  to Claude Opus 4.6 (Thinking). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>

@@ -1,0 +1,42 @@
+# SAUP - Shift-Aware Adaptive Uncertainty Prediction
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data (raw downloads)
+data/raw/*.zip
+data/raw/*.data
+data/raw/*.test
+data/raw/*.names
+
+# Models (large binary files)
+models/*.joblib
+models/*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env
+.env
+
+# Jupyter
+.ipynb_checkpoints/

@@ -1,0 +1,10 @@
+{
+  "dataset": "bank",
+  "random_seed": 42,
+  "splits": {
+    "train": 25317,
+    "calibration": 3616,
+    "conformal": 3617,
+    "policy": 3618
+  }
+}
