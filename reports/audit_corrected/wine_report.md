@@ -1,6 +1,6 @@
 # SAUP Experimental Report — UCI Wine Quality (Physicochemical Quality >= 7)
 
-**Generated:** 2026-10-14 00:11:03
+**Generated:** 2026-10-14 00:20:33
 **Dataset:** UCI Wine Quality (Physicochemical Quality >= 7)
 
 ## Abstract
@@ -23,8 +23,8 @@ Evaluated on the held-out test set:
 |-------|----------|--------------|----|---------|-------------|-----|----------------|
 | logistic_regression | 0.8215 | 0.6088 | 0.3626 | 0.8039 | 0.1252 | 0.0216 | 1.49 |
 | random_forest | 0.8608 | 0.6966 | 0.5464 | 0.8734 | 0.1038 | 0.0286 | 0.63 |
-| mlp | 0.8246 | 0.6520 | 0.4519 | 0.8350 | 0.1184 | 0.0308 | 2.52 |
-| xgboost | 0.8662 | 0.7427 | 0.6133 | 0.8733 | 0.1029 | 0.0571 | 0.30 |
+| mlp | 0.8246 | 0.6520 | 0.4519 | 0.8350 | 0.1184 | 0.0308 | 2.03 |
+| xgboost | 0.8662 | 0.7427 | 0.6133 | 0.8733 | 0.1029 | 0.0571 | 0.29 |
 
 ## 3. Distribution Shift Experiments
 

@@ -1,6 +1,6 @@
 # SAUP Experimental Report — UCI Bank Marketing (Deposit Subscription)
 
-**Generated:** 2026-10-14 00:11:03
+**Generated:** 2026-10-14 00:20:33
 **Dataset:** UCI Bank Marketing (Deposit Subscription)
 
 ## Abstract
@@ -21,10 +21,10 @@ Evaluated on the held-out test set:
 
 | Model | Accuracy | Balanced Acc | F1 | ROC-AUC | Brier Score | ECE | Train Time (s) |
 |-------|----------|--------------|----|---------|-------------|-----|----------------|
-| logistic_regression | 0.8931 | 0.5820 | 0.2778 | 0.7709 | 0.0852 | 0.0140 | 1.80 |
+| logistic_regression | 0.8931 | 0.5820 | 0.2778 | 0.7709 | 0.0852 | 0.0140 | 1.75 |
 | random_forest | 0.8940 | 0.5816 | 0.2773 | 0.8014 | 0.0816 | 0.0142 | 1.29 |
-| mlp | 0.8945 | 0.5971 | 0.3166 | 0.7833 | 0.0839 | 0.0138 | 7.57 |
-| xgboost | 0.8957 | 0.6204 | 0.3692 | 0.7952 | 0.0821 | 0.0154 | 0.62 |
+| mlp | 0.8945 | 0.5971 | 0.3166 | 0.7833 | 0.0839 | 0.0138 | 8.35 |
+| xgboost | 0.8957 | 0.6204 | 0.3692 | 0.7952 | 0.0821 | 0.0154 | 0.98 |
 
 ## 3. Distribution Shift Experiments
 

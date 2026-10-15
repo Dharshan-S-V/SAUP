@@ -1,6 +1,6 @@
 # SAUP Experimental Report — UCI Adult / Census Income
 
-**Generated:** 2026-10-14 00:11:03
+**Generated:** 2026-10-14 00:20:33
 **Dataset:** UCI Adult / Census Income
 
 ## Abstract
@@ -21,10 +21,10 @@ Evaluated on the held-out test set:
 
 | Model | Accuracy | Balanced Acc | F1 | ROC-AUC | Brier Score | ECE | Train Time (s) |
 |-------|----------|--------------|----|---------|-------------|-----|----------------|
-| logistic_regression | 0.8523 | 0.7636 | 0.6558 | 0.9052 | 0.1019 | 0.0073 | 2.94 |
-| random_forest | 0.8622 | 0.7654 | 0.6662 | 0.9141 | 0.0976 | 0.0294 | 1.21 |
-| mlp | 0.8565 | 0.7809 | 0.6773 | 0.9093 | 0.0997 | 0.0133 | 9.27 |
-| xgboost | 0.8719 | 0.7957 | 0.7061 | 0.9257 | 0.0892 | 0.0105 | 0.99 |
+| logistic_regression | 0.8523 | 0.7636 | 0.6558 | 0.9052 | 0.1019 | 0.0073 | 2.78 |
+| random_forest | 0.8622 | 0.7654 | 0.6662 | 0.9141 | 0.0976 | 0.0294 | 1.16 |
+| mlp | 0.8565 | 0.7809 | 0.6773 | 0.9093 | 0.0997 | 0.0133 | 9.79 |
+| xgboost | 0.8719 | 0.7957 | 0.7061 | 0.9257 | 0.0892 | 0.0105 | 0.73 |
 
 ## 3. Distribution Shift Experiments
 
